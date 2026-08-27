@@ -4,10 +4,36 @@ with lib;
 
 let
   cfg = config.yunshu.container;
+
+  gatewayConfig = {
+    boot.kernel.sysctl = {
+      "net.ipv4.ip_forward" = true;
+      "net.ipv6.conf.all.forwarding" = true;
+      "net.ipv4.conf.all.rp_filter" = 0;
+      "net.ipv4.conf.default.rp_filter" = 0;
+      "net.ipv4.conf.all.send_redirects" = 0;
+      "net.ipv4.conf.default.send_redirects" = 0;
+    };
+
+    networking.nftables.enable = true;
+
+    networking.firewall = {
+      filterForward = true;
+      extraForwardRules = ''
+        iifname "eth0" accept
+        iifname "tun0" accept
+      '';
+    };
+
+    # Gateway mode uses YunShu's own TUN routing, not the separate 7890 proxy.
+    services.yunshu.proxy.enable = mkForce false;
+  };
 in
 {
   options.yunshu.container = {
-    enable = mkEnableOption "YunShu proxy in a declarative NixOS container";
+    enable = mkEnableOption "YunShu headless gateway/proxy in a declarative NixOS container";
+
+    gatewayMode = mkEnableOption "transparent LAN gateway mode";
 
     name = mkOption {
       type = types.str;
@@ -99,6 +125,10 @@ in
         assertion = cfg.networkMode != "bridge" || (cfg.bridge != null && cfg.lanAddress != null);
         message = "yunshu.container.bridge and yunshu.container.lanAddress are required in bridge mode.";
       }
+      {
+        assertion = !cfg.gatewayMode || cfg.networkMode == "bridge";
+        message = "yunshu.container.gatewayMode requires networkMode = \"bridge\".";
+      }
     ];
 
     containers.${cfg.name} = {
@@ -106,7 +136,7 @@ in
       privateNetwork = true;
       enableTun = true;
       ephemeral = !cfg.persistState;
-      config = cfg.guestModule;
+      config = mkMerge [ cfg.guestModule (mkIf cfg.gatewayMode gatewayConfig) ];
     } // (if cfg.networkMode == "bridge" then {
       hostBridge = cfg.bridge;
       localAddress = cfg.lanAddress;

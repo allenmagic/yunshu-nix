@@ -1,15 +1,16 @@
 # yunshu-nix
 
 把 `YunShu_2.3.10.30_cpe.deb` 剥离 GUI 后的 headless 后台服务，跑在一个
-NixOS declarative container 里。容器同时安装并配置代理，直接把容器 IP 暴露给
-路由器或局域网设备做分流，不再经过宿主机 NAT。
+NixOS declarative container 里。默认以透明网关模式接入局域网，复用 YunShu
+自带的 TUN 分流；也可以关闭 `gatewayMode`，退回 3proxy/sing-box 代理模式。
 
 详细部署、登录、排障和备份说明见 [docs/使用手册.md](./docs/使用手册.md)。
 
 ## 默认配置
 
 - 运行时 payload 来自 `dist/yunshu-headless/`
-- 默认代理：`3proxy`，监听 `0.0.0.0:7890`，使用 `auto` 模式同时提供 HTTP/SOCKS 入口
+- 默认模式：`gatewayMode = true`，容器作为局域网默认网关，直接复用 YunShu TUN 分流
+- 可选代理模式：关闭 `gatewayMode` 后启用 `3proxy`/`sing-box`，监听 `0.0.0.0:7890`
 - 默认企业码：`cpe`，SP 地址：`https://sp.eagleyun.cn/`
 - 网络模式：`bridge`，容器拥有独立局域网 IP
 - 容器 root 文件系统默认持久化，登录 token 落在容器内 `/var/lib/yunshu`
@@ -59,10 +60,10 @@ docs/
 
           yunshu.container = {
             enable = true;
+            gatewayMode = true;
             networkMode = "bridge";
             bridge = "br0";
             lanAddress = "192.168.1.50/24";
-            proxyPort = 7890;
           };
         }
       ];
@@ -77,15 +78,33 @@ docs/
 sudo nixos-rebuild switch --flake .#host
 ```
 
-路由器或局域网设备把代理指向容器 IP：
+局域网设备把默认网关指向容器 IP：
 
 ```text
-192.168.1.50:7890
+192.168.1.50
 ```
+
+DNS 也建议指向容器，或后续在容器内做 53 端口透明重定向。
 
 ## 容器网络
 
-`modules/container.nix` 提供两种模式，默认是 `bridge`。
+`modules/container.nix` 提供 `bridge` 和 `nat` 两种接入模式，默认是 `bridge`。
+透明网关模式要求使用 `bridge`。
+
+### 透明网关
+
+```nix
+yunshu.container = {
+  enable = true;
+  gatewayMode = true;
+  networkMode = "bridge";
+  bridge = "br0";
+  lanAddress = "192.168.1.50/24";
+};
+```
+
+网关模式会在容器内开启 IP 转发、关闭 ICMP redirect、放行 `eth0 <-> tun0`
+转发，并关闭独立的 7890 代理。局域网设备只需把默认网关指向容器 LAN IP。
 
 ### bridge
 
@@ -110,6 +129,7 @@ yunshu.container = {
 ```nix
 yunshu.container = {
   enable = true;
+  gatewayMode = false;
   networkMode = "nat";
   hostAddress = "10.100.0.1";
   localAddress = "10.100.0.2";

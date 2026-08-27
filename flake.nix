@@ -1,5 +1,5 @@
 {
-  description = "YunShu headless proxy in a NixOS declarative container";
+  description = "YunShu headless transparent gateway in a NixOS declarative container";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -16,6 +16,7 @@
         imports = [ ./modules/container.nix ];
 
         yunshu.container.enable = true;
+        yunshu.container.gatewayMode = true;
         yunshu.container.guestModule = {
           imports = [
             self.nixosModules.yunshu-headless
