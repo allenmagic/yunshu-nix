@@ -11,7 +11,6 @@ NixOS declarative container 里。默认以透明网关模式接入局域网，�
 - 运行时 payload 来自 `dist/yunshu-headless/`
 - 默认模式：`gatewayMode = true`，容器作为局域网默认网关，直接复用 YunShu TUN 分流
 - 可选代理模式：关闭 `gatewayMode` 后启用 `3proxy`/`sing-box`，监听 `0.0.0.0:7890`
-- 默认企业码：`cpe`，SP 地址：`https://sp.eagleyun.cn/`
 - 网络模式：`bridge`，容器拥有独立局域网 IP
 - 容器 root 文件系统默认持久化，登录 token 落在容器内 `/var/lib/yunshu`
 
@@ -188,7 +187,7 @@ sudo nixos-container run yunshu-router -- \
 ```nix
 yunshu.container.guestModule = {
   services.yunshu = {
-    corpCode = "cpe";
+    corpCode = "<企业码>";
     spAddr = "https://sp.eagleyun.cn/";
     loginOnStart = true;
   };
