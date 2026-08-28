@@ -27,6 +27,28 @@ let
 
     # Gateway mode uses YunShu's own TUN routing, not the separate 7890 proxy.
     services.yunshu.proxy.enable = mkForce false;
+
+    # 直连流量出口：上游路由器（Alpine VM 的 LAN IP）
+    networking.defaultGateway = mkIf (cfg.upstreamGateway != null) {
+      address = cfg.upstreamGateway;
+      interface = "eth0";
+    };
+
+    # 浮动网关（VRRP）——MASTER 节点（与 Alpine VM 的 BACKUP 配对）
+    # 参数与 alpine-router-image 的 base/keepalived/keepalived.conf 对齐
+    services.keepalived = {
+      enable = true;
+      vrrpInstances.LAN = {
+        state = "MASTER";
+        interface = "eth0";
+        virtualRouterId = cfg.vrrpId;
+        priority = 150;
+        advertInterval = 1;
+        authType = "PASS";
+        authPass = cfg.authPass;
+        virtualIps = [ { addr = "${cfg.floatIp}/24"; } ];
+      };
+    };
   };
 in
 {
@@ -108,6 +130,39 @@ in
         Persist the container root filesystem, including /var/lib/yunshu login
         tokens. Disable only for stateless/throwaway instances.
       '';
+    };
+
+    upstreamGateway = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "192.168.10.1";
+      description = ''
+        Direct-traffic upstream gateway (usually the router VM's LAN IP).
+        Set in gateway mode so the container routes non-proxied traffic
+        through the upstream router.
+      '';
+    };
+
+    floatIp = mkOption {
+      type = types.str;
+      default = "192.168.10.254";
+      description = ''
+        VRRP floating IP held by MASTER (this container) and taken over by
+        the BACKUP (router VM) when the container is unavailable. Must match
+        alpine-router-image's keepalived.conf and LAN_GATEWAY.
+      '';
+    };
+
+    vrrpId = mkOption {
+      type = types.int;
+      default = 10;
+      description = "VRRP virtual_router_id, shared with the BACKUP node.";
+    };
+
+    authPass = mkOption {
+      type = types.str;
+      default = "alpine-float";
+      description = "VRRP authentication pass, shared with the BACKUP node.";
     };
 
     guestModule = mkOption {
