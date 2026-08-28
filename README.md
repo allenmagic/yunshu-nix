@@ -173,14 +173,17 @@ sudo nixos-container run yunshu-router -- \
   systemctl restart yunshu-login
 ```
 
-## 代理
+## 透明网关与备选代理
 
-默认使用 `3proxy`，因为它是一个很小的 C 实现，适合纯内网、无加密的转发场景。
-代理监听 `0.0.0.0:7890`，`auto` 模式会在同一端口上自动识别 HTTP 和 SOCKS 协议。
+**默认（`gatewayMode = true`）不启用独立代理**：流量经容器转发后由 YunShu 自带
+TUN 按策略分流，`services.yunshu.proxy` 被强制关闭（`mkForce false`）。
 
-由于这是内网 VPN 代理，默认关闭了 3proxy 的 `denyPrivate`，允许访问企业内网和
-私网目标。当前也默认 `auth = [ "none" ]`；如果需要额外入口或自定义服务，可以在
-`services.yunshu.proxy.threeProxyServices` 中追加 3proxy service 定义。
+如需退回传统代理模式（客户端手动配置代理地址，而非透明网关），关闭
+`gatewayMode` 后可用 `3proxy`/`sing-box`：监听 `0.0.0.0:7890`（3proxy 为很小的
+C 实现，适合纯内网无加密转发场景，`auto` 模式同端口自动识别 HTTP/SOCKS）。
+此时默认关闭 3proxy 的 `denyPrivate`（允许访问企业内网）且 `auth = "none"`；
+需要额外入口或自定义服务可在 `services.yunshu.proxy.threeProxyServices` 追加
+3proxy service 定义。
 
 ## 覆盖服务参数
 
@@ -192,6 +195,7 @@ yunshu.container.guestModule = {
     loginOnStart = true;
   };
 
+  # 备选：关闭 gatewayMode 时启用独立代理（透明网关模式不需要）
   services.yunshu.proxy = {
     enable = true;
     backend = "3proxy";
