@@ -43,10 +43,15 @@ let
         interface = "eth0";
         virtualRouterId = cfg.vrrpId;
         priority = 150;
-        advertInterval = 1;
-        authType = "PASS";
-        authPass = cfg.authPass;
         virtualIps = [ { addr = "${cfg.floatIp}/24"; } ];
+        # nixpkgs 26.05 的 keepalived 模块无 advert/auth 字段，走 extraConfig
+        extraConfig = ''
+          advert_int 1
+          authentication {
+            auth_type PASS
+            auth_pass ${cfg.authPass}
+          }
+        '';
       };
     };
   };
