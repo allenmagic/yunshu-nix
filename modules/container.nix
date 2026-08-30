@@ -68,6 +68,12 @@ in
       description = "Name of the NixOS container.";
     };
 
+    hostname = mkOption {
+      type = types.str;
+      default = "yunshu-router";
+      description = "Fixed hostname inside the container (stable device identity).";
+    };
+
     hostAddress = mkOption {
       type = types.str;
       default = "10.100.0.1";
@@ -111,6 +117,13 @@ in
       default = null;
       example = "fd00::50/64";
       description = "Optional IPv6 address with prefix length in bridge mode.";
+    };
+
+    macAddress = mkOption {
+      type = types.nullOr types.str;
+      default = "02:00:00:02:00:01";
+      example = "02:00:00:02:00:01";
+      description = "Fixed MAC address for the container's eth0 (bridge mode). Set null to auto-generate.";
     };
 
     forwardProxy = mkOption {
@@ -196,7 +209,21 @@ in
       privateNetwork = true;
       enableTun = true;
       ephemeral = !cfg.persistState;
-      config = mkMerge [ cfg.guestModule (mkIf cfg.gatewayMode gatewayConfig) ];
+      config = mkMerge [
+        cfg.guestModule
+        (mkIf cfg.gatewayMode gatewayConfig)
+        {
+          # 固定设备身份：hostname
+          networking.hostName = cfg.hostname;
+        }
+        (mkIf (cfg.macAddress != null) {
+          # 固定设备身份：eth0 的 MAC（稳定 ARP / 网络识别）
+          systemd.network.networks."10-eth0" = {
+            matchConfig.Name = "eth0";
+            linkConfig.MACAddress = cfg.macAddress;
+          };
+        })
+      ];
     } // (if cfg.networkMode == "bridge" then {
       hostBridge = cfg.bridge;
       localAddress = cfg.lanAddress;
