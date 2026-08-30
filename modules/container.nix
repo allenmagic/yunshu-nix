@@ -74,6 +74,12 @@ in
       description = "Fixed hostname inside the container (stable device identity).";
     };
 
+    machineId = mkOption {
+      type = types.str;
+      default = "5212e91dae029bf58f9beffe3402c288";
+      description = "Fixed systemd machine-id (32 lowercase hex chars, no dashes).";
+    };
+
     hostAddress = mkOption {
       type = types.str;
       default = "10.100.0.1";
@@ -213,8 +219,9 @@ in
         cfg.guestModule
         (mkIf cfg.gatewayMode gatewayConfig)
         {
-          # 固定设备身份：hostname
+          # 固定设备身份：hostname + machine-id
           networking.hostName = cfg.hostname;
+          environment.etc."machine-id".text = cfg.machineId;
         }
         (mkIf (cfg.macAddress != null) {
           # 固定设备身份：eth0 的 MAC（稳定 ARP / 网络识别）
