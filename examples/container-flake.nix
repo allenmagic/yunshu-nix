@@ -23,9 +23,9 @@
           yunshu.container = {
             name = "yunshu-router";
             networkMode = "bridge";
-            gatewayMode = true;
+            mode = "gateway";
             bridge = "br0";
-            lanAddress = "192.168.1.50/24";
+            lanAddress = "192.168.10.3/24";
           };
         }
       ];

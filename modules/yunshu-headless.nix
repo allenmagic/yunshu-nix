@@ -60,7 +60,24 @@ let
   initScript = ''
     mkdir -p \
       /opt/apps/yunshu/files \
-      ${stateDir}/{config,socket,tmp,bak,logs}
+      ${stateDir}/{config,socket,tmp,bak,logs,login-www}
+
+    : > ${stateDir}/login-www/login-url.txt
+    printf '%s\n' '{"url":"","status":"waiting","detail":""}' \
+      > ${stateDir}/login-www/status.json
+    printf '%s\n' \
+      '<!doctype html>' \
+      '<html lang="zh-CN">' \
+      '<meta charset="utf-8">' \
+      '<meta http-equiv="refresh" content="3">' \
+      '<title>YunShu 登录</title>' \
+      '<body>' \
+      '<h1>YunShu 登录</h1>' \
+      '<p>状态：等待登录</p>' \
+      '<p>正在获取登录链接，请稍候…</p>' \
+      '</body>' \
+      '</html>' \
+      > ${stateDir}/login-www/index.html
 
     ln -sfn ${binDir} /opt/apps/yunshu/files/bin
     ln -sfn ${systemDir} /opt/apps/yunshu/files/system
@@ -96,15 +113,112 @@ EOF
     fi
   '';
 
-  loginScript = pkgs.writeShellScript "yunshu-login" ''
-    set -euo pipefail
-    export BROWSER=""
-    # 优先选飞书 SSO；如果只有短信源，则退化为交互输入。
-    if printf '1\n' | ${binDir}/yunshu -c "${cfg.corpCode}" -l; then
-      mkdir -p "${stateDir}/config"
-      touch "${stateDir}/config/.logged-in"
+  loginHelper = pkgs.writeScriptBin "yunshu-login-helper" ''
+    #!${pkgs.bash}/bin/bash
+    set -u
+
+    state_dir="''${YUNSHU_STATE_DIR:-/var/lib/yunshu}"
+    corp_code="''${YUNSHU_CORP_CODE:-}"
+    bin_path="''${YUNSHU_BIN:-/opt/apps/yunshu/files/bin/yunshu}"
+
+    www_dir="$state_dir/login-www"
+    log_file="$state_dir/login.log"
+    url_file="$www_dir/login-url.txt"
+    status_file="$www_dir/status.json"
+    index_file="$www_dir/index.html"
+    marker="$state_dir/config/.logged-in"
+
+    mkdir -p "$www_dir" "$state_dir/config"
+    : > "$url_file"
+
+    html_escape() {
+      printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+    }
+
+    json_escape() {
+      printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+    }
+
+    write_status() {
+      status="$1"
+      detail="$2"
+      url="$3"
+      url_json="$(json_escape "$url")"
+      printf '{"url":"%s","status":"%s","detail":"%s"}\n' \
+        "$url_json" "$status" "$detail" > "$status_file"
+    }
+
+    render_page() {
+      status="$1"
+      url="$2"
+
+      if [ -n "$url" ]; then
+        url_attr="$(html_escape "$url")"
+        link_open="<p><a href=\"$url_attr\">打开飞书 SSO 登录页</a></p>"
+        link_code="<p><code>$url_attr</code></p>"
+      else
+        link_open="<p>正在获取登录链接，请稍候…</p>"
+        link_code=""
+      fi
+
+      case "$status" in
+        authenticated) status_text="登录成功" ;;
+        error) status_text="登录失败" ;;
+        *) status_text="等待登录" ;;
+      esac
+
+      printf '%s\n' \
+        '<!doctype html>' \
+        '<html lang="zh-CN">' \
+        '<meta charset="utf-8">' \
+        '<meta http-equiv="refresh" content="3">' \
+        '<title>YunShu 登录</title>' \
+        '<body>' \
+        '<h1>YunShu 登录</h1>' \
+        "<p>状态：$status_text</p>" \
+        "$link_open" \
+        "$link_code" \
+        '<hr>' \
+        '<p>完成飞书 SSO 后，本页会自动刷新；容器拿到 token 后会显示登录成功。</p>' \
+        '</body>' \
+        '</html>' \
+        > "$index_file"
+    }
+
+
+    write_status waiting "" ""
+    render_page waiting ""
+
+    url=""
+    printf '1\n' | "$bin_path" -c "$corp_code" -l 2>&1 | while IFS= read -r line; do
+      printf '%s\n' "$line" >> "$log_file"
+      printf '%s\n' "$line"
+
+      if [ ! -s "$url_file" ]; then
+        candidate="$(printf '%s\n' "$line" | grep -Eo 'https?://[^[:space:]]+' | head -n1 || true)"
+        if [ -n "$candidate" ]; then
+          printf '%s\n' "$candidate" > "$url_file"
+          write_status waiting "" "$candidate"
+          render_page waiting "$candidate"
+        fi
+      fi
+    done
+    yunshu_rc="''${PIPESTATUS[1]:-1}"
+    url="$(cat "$url_file" 2>/dev/null || true)"
+
+    if [ "$yunshu_rc" -eq 0 ]; then
+      touch "$marker"
+      write_status authenticated "yunshu login succeeded" "$url"
+      render_page authenticated "$url"
+    else
+      write_status error "yunshu exited with $yunshu_rc" "$url"
+      render_page error "$url"
     fi
+
+    sleep 3
+    exit "$yunshu_rc"
   '';
+
 in
 {
   options.services.yunshu = {
@@ -136,10 +250,24 @@ in
       default = true;
       description = "Attempt Feishu/SMS login at boot; URL is visible in the journal.";
     };
+
+    loginHttpListen = mkOption {
+      type = types.str;
+      default = "0.0.0.0";
+      description = "Address for the lightweight login status HTTP server.";
+    };
+
+    loginHttpPort = mkOption {
+      type = types.port;
+      default = 8080;
+      description = "Port for the lightweight login status HTTP server.";
+    };
   };
 
   config = mkIf cfg.enable {
     environment.systemPackages = [ yunshuCli ];
+
+    networking.firewall.allowedTCPPorts = optionals cfg.loginOnStart [ cfg.loginHttpPort ];
 
     systemd.services.yunshu-init = {
       description = "Prepare YunShu headless runtime state";
@@ -183,14 +311,33 @@ in
       };
     };
 
+    systemd.services.yunshu-login-http = mkIf cfg.loginOnStart {
+      description = "YunShu SSO login status HTTP server";
+      partOf = [ "yunshu-login.service" ];
+      after = [ "yunshu-init.service" ];
+      requires = [ "yunshu-init.service" ];
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${pkgs.darkhttpd}/bin/darkhttpd ${stateDir}/login-www --port ${toString cfg.loginHttpPort} --addr ${cfg.loginHttpListen} --no-listing --no-server-id --log ${stateDir}/login-http.log";
+        Restart = "on-failure";
+        RestartSec = 5;
+      };
+    };
+
     systemd.services.yunshu-login = mkIf cfg.loginOnStart {
       description = "YunShu headless login";
       wantedBy = [ "multi-user.target" ];
-      after = [ "yunshu-daemon.service" "yunshu-updater.service" ];
+      after = [ "yunshu-daemon.service" "yunshu-updater.service" "yunshu-login-http.service" ];
+      requires = [ "yunshu-login-http.service" ];
       unitConfig.ConditionPathExists = "!${stateDir}/config/.logged-in";
+      environment = {
+        YUNSHU_CORP_CODE = cfg.corpCode;
+        YUNSHU_BIN = "${binDir}/yunshu";
+        YUNSHU_STATE_DIR = stateDir;
+      };
       serviceConfig = {
         Type = "simple";
-        ExecStart = "${loginScript}/bin/yunshu-login";
+        ExecStart = "${loginHelper}/bin/yunshu-login-helper";
         Restart = "on-failure";
         RestartSec = 10;
         WorkingDirectory = stateDir;

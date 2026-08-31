@@ -5,62 +5,46 @@ with lib;
 let
   cfg = config.yunshu.container;
 
-  gatewayConfig = {
-    boot.kernel.sysctl = {
-      "net.ipv4.ip_forward" = true;
-      "net.ipv6.conf.all.forwarding" = true;
-      "net.ipv4.conf.all.rp_filter" = 0;
-      "net.ipv4.conf.default.rp_filter" = 0;
-      "net.ipv4.conf.all.send_redirects" = 0;
-      "net.ipv4.conf.default.send_redirects" = 0;
-    };
+  modeRegistry = {
+    gateway = ./modes/gateway.nix;
+    private_proxy = ./modes/private-proxy.nix;
+    public_proxy = ./modes/public-proxy.nix;
+    tproxy = ./modes/tproxy.nix;
+  };
 
-    networking.nftables.enable = true;
+  identityConfig = {
+    networking.hostName = cfg.hostname;
+    environment.etc."machine-id".text = cfg.machineId;
+  };
 
-    networking.firewall = {
-      filterForward = true;
-      extraForwardRules = ''
-        iifname "eth0" accept
-        iifname "tun0" accept
-      '';
-    };
-
-    # Gateway mode uses YunShu's own TUN routing, not the separate 7890 proxy.
-    services.yunshu.proxy.enable = mkForce false;
-
-    # 直连流量出口：上游路由器（Alpine VM 的 LAN IP）
-    networking.defaultGateway = mkIf (cfg.upstreamGateway != null) {
-      address = cfg.upstreamGateway;
-      interface = "eth0";
-    };
-
-    # 浮动网关（VRRP）——MASTER 节点（与 Alpine VM 的 BACKUP 配对）
-    # 参数与 alpine-router-image 的 base/keepalived/keepalived.conf 对齐
-    services.keepalived = {
-      enable = true;
-      vrrpInstances.LAN = {
-        state = "MASTER";
-        interface = "eth0";
-        virtualRouterId = cfg.vrrpId;
-        priority = 150;
-        virtualIps = [ { addr = "${cfg.floatIp}/24"; } ];
-        # nixpkgs 26.05 的 keepalived 模块无 advert/auth 字段，走 extraConfig
-        extraConfig = ''
-          advert_int 1
-          authentication {
-            auth_type PASS
-            auth_pass ${cfg.authPass}
-          }
-        '';
-      };
+  macConfig = {
+    systemd.network.networks."10-eth0" = {
+      matchConfig.Name = "eth0";
+      linkConfig.MACAddress = cfg.macAddress;
     };
   };
 in
 {
-  options.yunshu.container = {
-    enable = mkEnableOption "YunShu headless gateway/proxy in a declarative NixOS container";
+  imports = attrValues modeRegistry;
 
-    gatewayMode = mkEnableOption "transparent LAN gateway mode";
+  options.yunshu.container = {
+    enable = mkEnableOption "YunShu headless gateway or private proxy in a declarative NixOS container";
+
+    mode = mkOption {
+      type = types.enum (attrNames modeRegistry);
+      default = "gateway";
+      description = ''
+        Deployment mode. Each mode lives in its own module and only enables
+        the services that mode owns.
+      '';
+    };
+
+    _modes = mkOption {
+      type = types.attrsOf types.attrs;
+      internal = true;
+      default = {};
+      description = "Guest configuration fragments contributed by mode modules.";
+    };
 
     name = mkOption {
       type = types.str;
@@ -114,7 +98,7 @@ in
     lanAddress = mkOption {
       type = types.nullOr types.str;
       default = null;
-      example = "192.168.1.50/24";
+      example = "192.168.10.3/24";
       description = "Container IP with prefix length when using bridge mode.";
     };
 
@@ -137,7 +121,7 @@ in
       default = false;
       description = ''
         Forward the proxy TCP port from the host to the container. Only used
-        when networkMode = "nat".
+        when networkMode = "nat"; normally enabled for proxy modes.
       '';
     };
 
@@ -156,44 +140,11 @@ in
       '';
     };
 
-    upstreamGateway = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      example = "192.168.10.1";
-      description = ''
-        Direct-traffic upstream gateway (usually the router VM's LAN IP).
-        Set in gateway mode so the container routes non-proxied traffic
-        through the upstream router.
-      '';
-    };
-
-    floatIp = mkOption {
-      type = types.str;
-      default = "192.168.10.254";
-      description = ''
-        VRRP floating IP held by MASTER (this container) and taken over by
-        the BACKUP (router VM) when the container is unavailable. Must match
-        alpine-router-image's keepalived.conf and LAN_GATEWAY.
-      '';
-    };
-
-    vrrpId = mkOption {
-      type = types.int;
-      default = 10;
-      description = "VRRP virtual_router_id, shared with the BACKUP node.";
-    };
-
-    authPass = mkOption {
-      type = types.str;
-      default = "alpine-float";
-      description = "VRRP authentication pass, shared with the BACKUP node.";
-    };
-
     guestModule = mkOption {
       type = types.deferredModule;
       description = ''
         NixOS module evaluated inside the container. Usually this imports
-        services.yunshu headless and proxy modules.
+        services.yunshu headless, proxy and dns modules.
       '';
     };
   };
@@ -205,8 +156,8 @@ in
         message = "yunshu.container.bridge and yunshu.container.lanAddress are required in bridge mode.";
       }
       {
-        assertion = !cfg.gatewayMode || cfg.networkMode == "bridge";
-        message = "yunshu.container.gatewayMode requires networkMode = \"bridge\".";
+        assertion = cfg.mode != "gateway" || cfg.networkMode == "bridge";
+        message = "yunshu.container.mode = \"gateway\" requires networkMode = \"bridge\".";
       }
     ];
 
@@ -217,19 +168,9 @@ in
       ephemeral = !cfg.persistState;
       config = mkMerge [
         cfg.guestModule
-        (mkIf cfg.gatewayMode gatewayConfig)
-        {
-          # 固定设备身份：hostname + machine-id
-          networking.hostName = cfg.hostname;
-          environment.etc."machine-id".text = cfg.machineId;
-        }
-        (mkIf (cfg.macAddress != null) {
-          # 固定设备身份：eth0 的 MAC（稳定 ARP / 网络识别）
-          systemd.network.networks."10-eth0" = {
-            matchConfig.Name = "eth0";
-            linkConfig.MACAddress = cfg.macAddress;
-          };
-        })
+        cfg._modes.${cfg.mode}
+        identityConfig
+        (mkIf (cfg.macAddress != null) macConfig)
       ];
     } // (if cfg.networkMode == "bridge" then {
       hostBridge = cfg.bridge;
