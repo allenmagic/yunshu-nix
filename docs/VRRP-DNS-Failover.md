@@ -3,7 +3,7 @@
 ## 背景
 
 `yunshu-nix` 的 `gateway` 模式作为 VRRP MASTER，负责透明网关和 DNS 分流。
-主路由 VM（microvm-router-image）作为 VRRP BACKUP，平时提供 DHCP 和普通 NAT 逃生路径。
+主路由 VM（router-image）作为 VRRP BACKUP，平时提供 DHCP 和普通 NAT 逃生路径。
 
 如果 DHCP 继续把客户端 DNS 下发为路由器自身 IP（`192.168.10.1`），
 DNS 请求不会进入 yunshu 容器，YunShu 的域名分流会失效。
@@ -29,7 +29,7 @@ DNS 请求不会进入 yunshu 容器，YunShu 的域名分流会失效。
              -> YunShu DNS / 分流
 
 容器故障：
-  VRRP 192.168.10.254 漂移到 microvm-router-image
+  VRRP 192.168.10.254 漂移到 router-image
              -> dnsmasq bind-dynamic
              -> 223.5.5.5 / 223.6.6.6 / 119.29.29.29 / 182.254.116.116
 ```
@@ -48,7 +48,7 @@ services.yunshu.dns.port = 53;
 其中 `listen` 是 YunShu 本地 DNS listener，不是对 LAN 暴露的地址；
 53 端口透明重定向负责把进入容器的 VRRP DNS 流量 DNAT 到本地 listener。
 
-## microvm-router-image 侧修改
+## router-image 侧修改
 
 需要同步修改以下 dnsmasq 文件：
 
@@ -91,6 +91,6 @@ ss -ltnp | grep :53
 
 2. 模拟容器故障后：
 
-- VRRP `192.168.10.254` 应出现在 microvm-router-image 的 LAN 接口上。
+- VRRP `192.168.10.254` 应出现在 router-image 的 LAN 接口上。
 - dnsmasq 应能响应 `192.168.10.254:53`。
 - 客户端使用普通公网 DNS 仍可解析，但不再有 YunShu 策略分流。
