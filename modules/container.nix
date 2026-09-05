@@ -12,9 +12,12 @@ let
     tproxy = ./modes/tproxy.nix;
   };
 
+  # 注：不在此用 environment.etc 设 machine-id —— 那会生成指向 ro store 的
+  # 符号链接，NixOS 容器启动 touch /etc/machine-id 报 Read-only file system。
+  # 让容器 bootstrap 生成可写 machine-id（persistState 下登录态在
+  # /var/lib/yunshu 持久，不受 machine-id 变更影响）。
   identityConfig = {
     networking.hostName = cfg.hostname;
-    environment.etc."machine-id".text = cfg.machineId;
   };
 
   macConfig = {
