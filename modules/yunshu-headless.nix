@@ -34,6 +34,7 @@ let
     buildInputs = [
       pkgs.glibc
       pkgs.zlib
+      pkgs.libgcc        # libgcc_s.so.1（autoPatchelf 报缺）
     ];
 
     installPhase = ''
