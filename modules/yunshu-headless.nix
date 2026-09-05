@@ -299,7 +299,9 @@ in
       wants = [ "network-online.target" ];
       requires = [ "yunshu-init.service" ];
       serviceConfig = {
-        ExecStart = "${binDir}/yunshu-daemon -d";
+        # 前台运行（无 -d daemonize）：systemd Type=simple 直接管理，避免
+        # daemonize 后主进程退出被误判 deactivated、子进程无人照看
+        ExecStart = "${binDir}/yunshu-daemon";
         Restart = "on-failure";
         RestartSec = 5;
         WorkingDirectory = stateDir;
@@ -315,7 +317,7 @@ in
       wants = [ "network-online.target" ];
       requires = [ "yunshu-init.service" ];
       serviceConfig = {
-        ExecStart = "${binDir}/yunshu-updater -d";
+        ExecStart = "${binDir}/yunshu-updater";
         Restart = "on-failure";
         RestartSec = 5;
         WorkingDirectory = stateDir;
