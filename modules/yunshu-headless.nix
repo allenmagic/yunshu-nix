@@ -28,7 +28,13 @@ let
     name = "yunshu-headless-2.3.10.30";
     src = payloadSrc;
     dontUnpack = true;
-    nativeBuildInputs = [ pkgs.patchelf ];
+    # autoPatchelfHook：自动修 interpreter（NixOS glibc loader）并为所有
+    # 动态库依赖设 rpath。buildInputs 提供 .deb 二进制所需的库（zlib 等）。
+    nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+    buildInputs = [
+      pkgs.glibc
+      pkgs.zlib
+    ];
 
     installPhase = ''
       mkdir -p "$out/opt/apps/yunshu/files"
@@ -48,27 +54,9 @@ let
         "$out/opt/apps/yunshu/files/bin/exec/executor"
       chmod 0644 "$out/opt/apps/yunshu/files/bin/libtunnel.so"
 
-      # yunshu 二进制是 .deb 的 glibc 动态链接版，interpreter 指向 /lib64/ld-linux
-      # （NixOS 该处是 stub-ld 占位 → 报 "NixOS cannot run dynamically linked
-      # executables"）。patchelf 指到本机 glibc loader，并设 rpath 到 bin 目录
-      # （libtunnel.so 同目录加载）。静态/非 ELF 文件 patchelf 会报错，跳过即可。
-      chmod +w "$out/opt/apps/yunshu/files/bin/"*
-      for b in \
-        "$out/opt/apps/yunshu/files/bin/yunshu" \
-        "$out/opt/apps/yunshu/files/bin/yunshu-daemon" \
-        "$out/opt/apps/yunshu/files/bin/yunshu-updater" \
-        "$out/opt/apps/yunshu/files/bin/exec/executor"
-      do
-        patchelf --set-interpreter "${pkgs.glibc}/lib/ld-linux-x86-64.so.2" \
-          --set-rpath "$out/opt/apps/yunshu/files/bin" "$b" 2>/dev/null \
-          && echo "patchelf: $(basename "$b")" \
-          || echo "patchelf skip: $(basename "$b")（非动态 ELF）"
-      done
-      chmod 0755 \
-        "$out/opt/apps/yunshu/files/bin/yunshu" \
-        "$out/opt/apps/yunshu/files/bin/yunshu-daemon" \
-        "$out/opt/apps/yunshu/files/bin/yunshu-updater" \
-        "$out/opt/apps/yunshu/files/bin/exec/executor"
+      # .deb 二进制的 interpreter 是 /lib64/ld-linux（NixOS stub-ld 占位），
+      # autoPatchelfHook 在 postFixup 自动改到本机 glibc loader 并设 rpath
+      #（bin 目录 + zlib/glibc）。libtunnel.so 在 bin 同目录，rpath 覆盖。
     '';
   };
 
