@@ -11,11 +11,10 @@ in
 
     listen = mkOption {
       type = types.str;
-      default = "127.0.0.1";
+      default = "10.251.1.1";
       description = ''
-        Local address where YunShu's tunnel DNS listener is expected to bind
-        (YunShu config field `dns-listen-addr`). The default matches the
-        loopback DNS endpoint used by libtunnel.
+        Local address where YunShu's tunnel DNS listener is bound. The daemon
+        binds DNS on the tun0 address (10.251.1.1), not loopback.
       '';
     };
 

@@ -44,6 +44,21 @@ in
 
     networking.nftables.enable = true;
 
+    # SNAT/masquerade：下游设备直连流量经 eth0 出去时，把源地址改成容器自身
+    #（192.168.10.3），否则回包从上游直接绕回下游设备、绕开本容器 → 非对称
+    # 路由丢包。隧道流量（走 tun0）由 yunshu 隧道自身处理，不需 masquerade。
+    networking.nftables.tables.yunshu-snat = {
+      family = "ip";
+      content = ''
+        table ip yunshu-snat {
+          chain postrouting {
+            type nat hook postrouting priority srcnat; policy accept;
+            oifname "eth0" masquerade
+          }
+        }
+      '';
+    };
+
     networking.firewall = {
       filterForward = true;
       extraForwardRules = ''
