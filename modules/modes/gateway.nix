@@ -76,11 +76,15 @@ in
     };
 
     # 容器自身 DNS：指到直连网关（其上游 dnsmasq 可达）。否则容器解析失败
-    #（yunshu daemon 无法解析其控制面服务器）。容器无 systemd-resolved，
-    # 禁用 resolvconf 后 networking.nameservers 直接生成静态 /etc/resolv.conf。
+    #（yunshu daemon 无法解析其控制面服务器 sp.eagleyun.cn → 登录失败）。
+    # NixOS 容器会继承宿主 resolv.conf（127.0.0.53 stub，guest 无 resolved
+    # 监听 → 无效），故直接写死 /etc/resolv.conf 为静态内容。
     # LAN 客户端 DNS 仍由 transparentRedirect 走隧道，不受此影响。
-    networking.resolvconf.enable = lib.mkForce false;
     networking.nameservers = mkIf (g.upstreamGateway != null) [ g.upstreamGateway ];
+    environment.etc."resolv.conf" = mkIf (g.upstreamGateway != null) {
+      mode = "0644";
+      text = "nameserver ${g.upstreamGateway}\n";
+    };
 
     services.keepalived = {
       enable = true;

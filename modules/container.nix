@@ -169,10 +169,6 @@ in
       privateNetwork = true;
       enableTun = true;
       ephemeral = !cfg.persistState;
-      # 不继承宿主 resolv.conf（宿主是 systemd-resolved 的 127.0.0.53 stub，
-      # guest 里无 resolved 监听 → 会拿到无效 DNS）。让 guest 用 gateway mode
-      # 里 networking.nameservers 指定的上游网关。
-      useHostResolvConf = false;
       config = mkMerge [
         cfg.guestModule
         cfg._modes.${cfg.mode}
