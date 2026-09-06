@@ -80,6 +80,7 @@ in
     # NixOS 容器会继承宿主 resolv.conf（127.0.0.53 stub，guest 无 resolved
     # 监听 → 无效），故直接写死 /etc/resolv.conf 为静态内容。
     # LAN 客户端 DNS 仍由 transparentRedirect 走隧道，不受此影响。
+    networking.resolvconf.enable = lib.mkForce false;
     networking.nameservers = mkIf (g.upstreamGateway != null) [ g.upstreamGateway ];
     environment.etc."resolv.conf" = mkIf (g.upstreamGateway != null) {
       mode = "0644";
