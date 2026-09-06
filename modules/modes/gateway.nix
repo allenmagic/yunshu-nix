@@ -50,11 +50,9 @@ in
     networking.nftables.tables.yunshu-snat = {
       family = "ip";
       content = ''
-        table ip yunshu-snat {
-          chain postrouting {
-            type nat hook postrouting priority srcnat; policy accept;
-            oifname "eth0" masquerade
-          }
+        chain postrouting {
+          type nat hook postrouting priority srcnat; policy accept;
+          oifname "eth0" masquerade
         }
       '';
     };
