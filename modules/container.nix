@@ -23,6 +23,12 @@ let
       mode = "0644";
       text = "nameserver ${cfg.upstreamGateway}\n";
     };
+    # 容器出网默认路由：所有 bridge 模式都经上游网关（路由 VM）。否则容器
+    # 自己无默认路由、出不了外网（yunshu 连不上控制面 sp.eagleyun.cn 登录失败）。
+    networking.defaultGateway = mkIf (cfg.upstreamGateway != null) {
+      address = cfg.upstreamGateway;
+      interface = "eth0";
+    };
   };
 
   macConfig = {

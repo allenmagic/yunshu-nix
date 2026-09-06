@@ -60,10 +60,8 @@ in
     services.yunshu.dns.enable = mkDefault true;
     services.yunshu.dns.transparentRedirect = mkDefault true;
 
-    networking.defaultGateway = mkIf (cfg.upstreamGateway != null) {
-      address = cfg.upstreamGateway;
-      interface = "eth0";
-    };
+    # 默认路由已由 container.nix 的 identityConfig 统一设置（所有 bridge 模式
+    # 都经上游网关出网），此处不再重复。
 
     # 容器自身 DNS 统一由 container.nix 的 upstreamGateway 处理（写死
     # /etc/resolv.conf 指上游网关），此处不再重复。
