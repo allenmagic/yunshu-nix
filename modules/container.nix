@@ -18,6 +18,11 @@ let
   # /var/lib/yunshu 持久，不受 machine-id 变更影响）。
   identityConfig = {
     networking.hostName = cfg.hostname;
+    networking.resolvconf.enable = lib.mkForce false;
+    environment.etc."resolv.conf" = mkIf (cfg.upstreamGateway != null) {
+      mode = "0644";
+      text = "nameserver ${cfg.upstreamGateway}\n";
+    };
   };
 
   macConfig = {
@@ -110,6 +115,18 @@ in
       default = null;
       example = "fd00::50/64";
       description = "Optional IPv6 address with prefix length in bridge mode.";
+    };
+
+    upstreamGateway = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "192.168.10.1";
+      description = ''
+        Upstream gateway for the container's own DNS resolution (the router
+        VM's LAN IP whose dnsmasq is reachable). Used to write a static
+        /etc/resolv.conf so yunshu can resolve its control plane
+        (sp.eagleyun.cn) for login — independent of tunnel state.
+      '';
     };
 
     macAddress = mkOption {

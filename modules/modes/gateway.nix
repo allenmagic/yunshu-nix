@@ -30,16 +30,6 @@ in
       description = "VRRP authentication pass, shared with the BACKUP node.";
     };
 
-    upstreamGateway = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      example = "192.168.10.1";
-      description = ''
-        Direct-traffic upstream gateway (usually the router VM's LAN IP).
-        Set in gateway mode so the container routes non-proxied traffic
-        through the upstream router.
-      '';
-    };
   };
 
   config.yunshu.container._modes.gateway = mkIf (cfg.mode == "gateway") {
@@ -70,22 +60,13 @@ in
     services.yunshu.dns.enable = mkDefault true;
     services.yunshu.dns.transparentRedirect = mkDefault true;
 
-    networking.defaultGateway = mkIf (g.upstreamGateway != null) {
-      address = g.upstreamGateway;
+    networking.defaultGateway = mkIf (cfg.upstreamGateway != null) {
+      address = cfg.upstreamGateway;
       interface = "eth0";
     };
 
-    # 容器自身 DNS：指到直连网关（其上游 dnsmasq 可达）。否则容器解析失败
-    #（yunshu daemon 无法解析其控制面服务器 sp.eagleyun.cn → 登录失败）。
-    # NixOS 容器会继承宿主 resolv.conf（127.0.0.53 stub，guest 无 resolved
-    # 监听 → 无效），故直接写死 /etc/resolv.conf 为静态内容。
-    # LAN 客户端 DNS 仍由 transparentRedirect 走隧道，不受此影响。
-    networking.resolvconf.enable = lib.mkForce false;
-    networking.nameservers = mkIf (g.upstreamGateway != null) [ g.upstreamGateway ];
-    environment.etc."resolv.conf" = mkIf (g.upstreamGateway != null) {
-      mode = "0644";
-      text = "nameserver ${g.upstreamGateway}\n";
-    };
+    # 容器自身 DNS 统一由 container.nix 的 upstreamGateway 处理（写死
+    # /etc/resolv.conf 指上游网关），此处不再重复。
 
     services.keepalived = {
       enable = true;
