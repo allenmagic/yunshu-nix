@@ -311,29 +311,23 @@ in
     };
 
     # 隧道路由注入：yunshu 桌面版会自动把隧道虚拟网段（被墙域名解析到的
-    # 198.19.0.x）路由到 tun0，headless 版缺失。此服务轮询 tun0 出现后加
-    # 198.19.0.0/16 dev tun0，使经隧道 DNS 分流的流量真正走隧道。
+    # 198.19.0.x）路由到 tun0，headless 版缺失。此服务持续循环：tun0 一出现
+    # 就加 198.19.0.0/16 dev tun0（隧道可能开机后手动/延迟连接，故不设超时）。
     systemd.services.yunshu-routes = {
-      description = "Add tunnel routes to tun0 after YunShu connects";
+      description = "Add tunnel routes to tun0 whenever it appears";
       wantedBy = [ "multi-user.target" ];
       after = [ "yunshu-daemon.service" ];
       serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
+        Type = "simple";
         ExecStart = let
           routeScript = pkgs.writeShellScript "yunshu-add-routes" ''
             set -eu
-            # 等待 tun0 出现（daemon 连接隧道后创建），最长 120s
-            for i in $(seq 1 60); do
-              if ip link show tun0 >/dev/null 2>&1; then break; fi
-              sleep 2
+            while true; do
+              if ip link show tun0 >/dev/null 2>&1; then
+                ip route replace 198.19.0.0/16 dev tun0 2>/dev/null || true
+              fi
+              sleep 3
             done
-            if ip link show tun0 >/dev/null 2>&1; then
-              ip route replace 198.19.0.0/16 dev tun0 2>/dev/null || true
-              echo "tunnel route 198.19.0.0/16 -> tun0 added"
-            else
-              echo "tun0 not present after 120s, skip route"
-            fi
           '';
         in "${routeScript}";
         Restart = "on-failure";
