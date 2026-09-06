@@ -324,9 +324,10 @@ in
         ExecStart = let
           routeScript = pkgs.writeShellScript "yunshu-add-routes" ''
             set -eu
+            IP=${pkgs.iproute2}/bin/ip
             while true; do
-              if ip link show tun0 >/dev/null 2>&1; then
-                ip route replace 198.18.0.0/15 dev tun0 2>/dev/null || true
+              if "$IP" link show tun0 >/dev/null 2>&1; then
+                "$IP" route replace 198.18.0.0/15 dev tun0 2>/dev/null || true
               fi
               sleep 3
             done
