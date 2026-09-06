@@ -311,8 +311,10 @@ in
     };
 
     # 隧道路由注入：yunshu 桌面版会自动把隧道虚拟网段（被墙域名解析到的
-    # 198.19.0.x）路由到 tun0，headless 版缺失。此服务持续循环：tun0 一出现
-    # 就加 198.19.0.0/16 dev tun0（隧道可能开机后手动/延迟连接，故不设超时）。
+    # fake-IP）路由到 tun0，headless 版缺失。实测 fake-IP 落在 198.18.0.0/15
+    # 网段内（连接 pa/ga 前落 198.18.x、连接后落 198.19.x），故加 198.18.0.0/15
+    # 覆盖整个 RFC 2544 fake-IP 池。此服务持续循环：tun0 一出现就加（隧道可能
+    # 开机后手动/延迟连接，故不设超时）。
     systemd.services.yunshu-routes = {
       description = "Add tunnel routes to tun0 whenever it appears";
       wantedBy = [ "multi-user.target" ];
@@ -324,7 +326,7 @@ in
             set -eu
             while true; do
               if ip link show tun0 >/dev/null 2>&1; then
-                ip route replace 198.19.0.0/16 dev tun0 2>/dev/null || true
+                ip route replace 198.18.0.0/15 dev tun0 2>/dev/null || true
               fi
               sleep 3
             done
@@ -377,6 +379,37 @@ in
       serviceConfig = {
         Type = "simple";
         ExecStart = "${loginHelper}/bin/yunshu-login-helper";
+        Restart = "on-failure";
+        RestartSec = 10;
+        WorkingDirectory = stateDir;
+      };
+    };
+
+    # pa/ga 连接：登录态持久（token 在 /var/lib/yunshu），但 pa/ga 连接在容器
+    # 重启后会断——yunshu-daemon 只建空壳 tun0，不会自动重连 pa/ga。此服务持续
+    # 循环：已登录（.logged-in 存在）但连接断开（yunshu -i 含「已断开」）时执行
+    # yunshu -s all 重连，覆盖「已登录 + 容器重启」与「连接中途断开」两种场景。
+    systemd.services.yunshu-connect = {
+      description = "YunShu pa/ga auto-connect after login";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "yunshu-daemon.service" "yunshu-updater.service" ];
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = let
+          connectScript = pkgs.writeShellScript "yunshu-connect" ''
+            set -eu
+            BIN="${binDir}/yunshu"
+            MARK="${stateDir}/config/.logged-in"
+            while true; do
+              if [ -f "$MARK" ]; then
+                if "$BIN" -i 2>&1 | grep -q "已断开"; then
+                  "$BIN" -s all || true
+                fi
+              fi
+              sleep 15
+            done
+          '';
+        in "${connectScript}";
         Restart = "on-failure";
         RestartSec = 10;
         WorkingDirectory = stateDir;
