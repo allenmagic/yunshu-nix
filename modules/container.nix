@@ -19,9 +19,14 @@ let
   identityConfig = {
     networking.hostName = cfg.hostname;
     networking.resolvconf.enable = lib.mkForce false;
+    # DNS 顺序：隧道 DNS（10.251.1.1，全功能：控制面+分流）优先，上游网关兜底
+    #（隧道未连时仍能解析控制面登录）。
     environment.etc."resolv.conf" = mkIf (cfg.upstreamGateway != null) {
       mode = "0644";
-      text = "nameserver ${cfg.upstreamGateway}\n";
+      text = ''
+        nameserver 10.251.1.1
+        nameserver ${cfg.upstreamGateway}
+      '';
     };
     # 容器出网默认路由：所有 bridge 模式都经上游网关（路由 VM）。否则容器
     # 自己无默认路由、出不了外网（yunshu 连不上控制面 sp.eagleyun.cn 登录失败）。
