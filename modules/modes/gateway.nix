@@ -75,6 +75,11 @@ in
       interface = "eth0";
     };
 
+    # 容器自身 DNS：指到直连网关（其上游 dnsmasq 可达）。否则 systemd-resolved
+    # 无上游 → 容器自身解析失败（yunshu daemon 无法解析其控制面服务器）。
+    # LAN 客户端 DNS 仍由 transparentRedirect 走隧道，不受此影响。
+    networking.nameservers = mkIf (g.upstreamGateway != null) [ g.upstreamGateway ];
+
     services.keepalived = {
       enable = true;
       vrrpInstances.LAN = {
