@@ -238,10 +238,15 @@ in
 
     package = mkOption {
       type = types.path;
-      default = ../dist/yunshu-headless;
+      # 厂商同时发布 x86_64 与 arm64 的 .deb，两份 payload 都在 dist/ 下，
+      # 按架构自动选——x86 的 NAS 与 arm64 的 NanoPi 都不需要写覆盖。
+      default = if pkgs.stdenv.hostPlatform.isAarch64
+        then ../dist/yunshu-headless-arm64
+        else ../dist/yunshu-headless;
       description = ''
         Directory containing the stripped headless payload, i.e.
         dist/yunshu-headless from the original unpacked .deb.
+        默认按 hostPlatform 在 x86_64 与 arm64 两份之间选。
       '';
     };
 
