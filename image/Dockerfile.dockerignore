@@ -6,7 +6,11 @@ modules
 flake.nix
 flake.lock
 README.md
-dist/yunshu-headless
+dist/yunshu-headless/README.md
+dist/yunshu-headless/install.sh
+dist/yunshu-headless/supervise-run.sh
+dist/yunshu-headless/yunshu-login.sh
+dist/yunshu-headless/opt/apps/yunshu/files/system
 dist/yunshu-headless-arm64/README.md
 dist/yunshu-headless-arm64/install.sh
 dist/yunshu-headless-arm64/supervise-run.sh
