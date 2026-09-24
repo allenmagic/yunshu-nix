@@ -1,6 +1,5 @@
-FROM debian:bookworm-slim
+FROM --platform=linux/arm64 debian:bookworm-slim
 
-ARG TARGETARCH
 ARG PAYLOAD=dist/yunshu-headless-arm64
 ARG YUNSHU_CORP_CODE=cpe
 ARG YUNSHU_SP_ADDR=https://sp.eagleyun.cn/
@@ -19,19 +18,20 @@ COPY ${PAYLOAD}/opt/apps/yunshu/files/bin/ /opt/apps/yunshu/files/bin/
 COPY ${PAYLOAD}/opt/apps/yunshu/files/config/version.ini /usr/local/share/yunshu/version.ini
 
 RUN set -eu; \
+    _arch="$(dpkg --print-architecture)"; \
     _m="$(od -An -tx1 -j18 -N2 /opt/apps/yunshu/files/bin/yunshu-daemon | tr -d ' ')"; \
-    case "${TARGETARCH}" in \
+    case "${_arch}" in \
       arm64) _want=b700 ;; \
       amd64) _want=3e00 ;; \
       *)     _want="" ;; \
     esac; \
     if [ -n "${_want}" ] && [ "${_m}" != "${_want}" ]; then \
-      echo "payload 架构与目标平台不符: TARGETARCH=${TARGETARCH} 期望 e_machine=${_want} 实际=${_m}" >&2; \
-      echo "arm64 需 PAYLOAD=dist/yunshu-headless-arm64 且 --platform linux/arm64" >&2; \
-      echo "amd64 需 PAYLOAD=dist/yunshu-headless 且 --platform linux/amd64" >&2; \
+      echo "payload 架构与镜像架构不符: 镜像=${_arch} 期望 e_machine=${_want} 实际=${_m}" >&2; \
+      echo "arm64 镜像需 PAYLOAD=dist/yunshu-headless-arm64" >&2; \
+      echo "amd64 镜像需 PAYLOAD=dist/yunshu-headless" >&2; \
       exit 1; \
     fi; \
-    echo "架构校验通过: TARGETARCH=${TARGETARCH} e_machine=${_m} payload=${PAYLOAD}"
+    echo "架构校验通过: 镜像=${_arch} e_machine=${_m} payload=${PAYLOAD}"
 
 RUN mkdir -p /var/lib/yunshu \
  && for d in config socket tmp bak logs; do ln -sfn "/var/lib/yunshu/$d" "/opt/apps/yunshu/files/$d"; done
